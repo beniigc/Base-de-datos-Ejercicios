@@ -263,3 +263,83 @@ select * from STOCK
 select * from Empleado
 select * from Cliente
 select * from Producto
+
+/* PRACTICA PARA EL PARCIAL */
+
+/* Sabiendo que si un producto no es vendido en un deposito determinado entonces no posee registros en el 
+Se requiere una consulta SQL que para todos los productos que se quedaron sin stock en un deposito (cantidad 0 o nula) y
+poseen un stock mayor al punto de resposicion en otro deposito devuelva:
+
+1 - codigo de producto
+2 - detalle de producto
+3 - domicilio del deposito sin stock
+4 - cantidad de depositos con un stock superior al punto de reposicion
+
+la consulta debe ser ordenada por el codigo de producto.
+*/
+
+select prod_codigo, prod_detalle, depo_domicilio, count(distinct s2.stoc_deposito)
+from Producto
+join STOCK s1 on s1.stoc_producto = prod_codigo
+join DEPOSITO d1 on d1.depo_codigo = s1.stoc_deposito
+join STOCK s2 on s2.stoc_producto = prod_codigo
+where (s1.stoc_cantidad = 0 or s1.stoc_cantidad is null) 
+        and s2.stoc_cantidad > s2.stoc_punto_reposicion
+        and s1.stoc_deposito <> s2.stoc_deposito
+group by s1.stoc_producto, prod_codigo, prod_detalle, depo_domicilio
+order by 1
+
+select prod_codigo, prod_detalle
+from Producto
+join STOCK s1 on s1.stoc_producto = prod_codigo
+join DEPOSITO d1 on d1.depo_codigo = s1.stoc_deposito
+join STOCK s2 on s2.stoc_producto = prod_codigo
+order by prod_codigo
+
+select * from Item_factura
+select * from Factura
+
+/*
+Estadistica de ventas especiales.
+La factura es especial si tiene mas de 1 producto con composicion vendido.
+Year, cant_fact, total_facturado_especial, porc_especiales, max_factura, monto_total_vendido
+Order: cant_fact DESC, monto_total_vendido DESC
+*/
+
+Select year(fact_fecha), count(*), sum(item_cantidad * item_precio), (count(*)/(select count(*) from Factura)), max(fact_total), sum(item_cantidad)
+From Factura
+join Item_factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+where fact_tipo+fact_numero+fact_sucursal in (Select (fact_tipo+fact_numero+fact_sucursal)
+												From Factura
+												join Item_factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+												where item_producto in (select comp_producto from Composicion)
+												group by fact_tipo, fact_numero, fact_sucursal
+												having count(*) > 1)
+GROUP BY YEAR(fact_fecha);
+
+/*
+Realizar una consulta SQL que permita saber si un cliente compor un producto en todos los meses del 2012.
+Ademas mostrar para el 2012
+
+1. El cliente
+2. La razon social del cliente
+3. El producto comprado
+4. El nombre del producto
+5. Cantidad de productos distintos comprados por el cliente
+6. Cantidad de productos con composicion comprados por el cliente
+
+El resultado debera ser ordenado poniendo primero aquellos clientes que compraron mas de 10 productos distintos en el 2012
+*/
+
+select clie_codigo, clie_razon_social, item_producto, count(distinct(item_producto)), (select count(*) From Item_Factura 
+																						where item_producto in (select comp_producto from Composicion))
+From Factura
+join Cliente on fact_cliente = clie_codigo
+join Item_Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+where fact_cliente in (select fact_cliente
+						from Factura 
+						where year(fact_fecha) = '2012' 
+						group by fact_cliente
+						having (count(distinct(month(fact_fecha))) = 12))
+group by clie_codigo, clie_razon_social, item_producto
+order by 4 desc

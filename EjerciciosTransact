@@ -337,18 +337,20 @@ Se deberá mostrar Apellido y nombre del empleado en una sola columna y para el 
 
 No se permiten sub select en el FROM.*/
 
-Select top 1 (empl_nombre + ' ' + empl_apellido), 'MEJOR FACTURACION' CRITERIO
-from Empleado
-join Factura on fact_vendedor = empl_codigo and year(fact_fecha) = (select max(year(fact_fecha)) From factura)
-group by empl_nombre, empl_apellido
-order by sum(fact_total) desc
-UNION ALL
-Select top 1 (empl_nombre + '' + empl_apellido), 'VENDIO MAS FACTURAS' CRITERIO
-from Empleado
-join Factura on fact_vendedor = empl_codigo and year(fact_fecha) = (select max(year(fact_fecha)) From factura)
-group by empl_nombre, empl_apellido
-order by count(*) desc
- 
+select rtrim(e1.empl_apellido)+' '+rtrim(e1.empl_nombre) as Apellido_y_Nombre, 'Mejor Facturación' as Categoria
+from Empleado e1
+where e1.empl_codigo in (select top 1 empl_codigo from Empleado join Factura on fact_vendedor=empl_codigo
+where YEAR(fact_fecha) = (SELECT TOP 1 YEAR(fact_fecha) FROM FACTURA ORDER BY FACT_FECHA DESC )
+group by empl_codigo order by sum(fact_total) desc)
+
+union
+
+select rtrim(e2.empl_apellido)+' '+rtrim(e2.empl_nombre) as Apellido_y_Nombre, 'Vendió Más Facturas' as Categoria
+from Empleado e2
+where e2.empl_codigo in (select top 1 empl_codigo from Empleado join Factura on fact_vendedor=empl_codigo
+where YEAR(fact_fecha) = (SELECT TOP 1 YEAR(fact_fecha) FROM FACTURA ORDER BY FACT_FECHA DESC )
+group by empl_codigo order by count(distinct fact_tipo+fact_numero+fact_sucursal) desc)
+go 
 /* 
 - como son dos universos disyuntivos, no lo puedo resolver en el from
 - Aca el union no te lo toma porque no podes tener un order by en cada select, tenes que hacer un empl_codigo in (select top 1)
