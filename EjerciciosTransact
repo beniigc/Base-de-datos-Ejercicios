@@ -1,0 +1,395 @@
+/* 3. Cree el/los objetos de base de datos necesarios para corregir la tabla empleado
+en caso que sea necesario. Se sabe que debería existir un único gerente general
+(debería ser el único empleado sin jefe). Si detecta que hay más de un empleado
+sin jefe deberá elegir entre ellos el gerente general, el cual será seleccionado por
+mayor salario. Si hay más de uno se seleccionara el de mayor antigüedad en la
+empresa. Al finalizar la ejecución del objeto la tabla deberá cumplir con la regla
+de un único empleado sin jefe (el gerente general) y deberá retornar la cantidad
+de empleados que había sin jefe antes de la ejecución. */
+
+select * from Empleado 
+
+Create Procedure Ej3Transact @cantidad Int OUTPUT
+AS
+BEGIN
+select @cantidad = count(*) 
+		From Empleado
+		where empl_jefe is null
+if @cantidad > 1
+	begin
+		update Empleado	
+			set empl_jefe = (select top 1 Empl_codigo From Empleado
+								where empl_jefe is null
+								order by empl_salario, empl_ingreso)
+			where empl_jefe is null and 
+			  empl_codigo not in (SELECT TOP 1 EMPL_CODIGO 
+								  FROM EMPLEADO  
+								  where empl_jefe is null 
+								  ORDER BY empl_salario DESC, empl_ingreso ASC) /* PORQUE SINO UPDATEARIA AL QUE ES TAMBIEN */
+	end
+end
+go
+
+BEGIN
+declare @cantidadEmpl int
+exec dbo.Ej3Transact @cantidadEmpl output
+print @cantidadEmpl
+end 
+go
+
+
+/* 4. Cree el/los objetos de base de datos necesarios para actualizar la columna de
+empleado empl_comision con la sumatoria del total de lo vendido por ese
+empleado a lo largo del último año. Se deberá retornar el código del vendedor
+que más vendió (en monto) a lo largo del último año. */
+
+select * FROM Empleado
+select * FROM Factura
+
+Create Procedure Ej4Transact @mejorEmpleado int OUTPUT
+AS
+BEGIN
+	UPDATE Empleado
+    SET empl_comision = ISNULL((SELECT SUM(fact_total)
+								FROM Factura 
+								WHERE fact_vendedor = empl_codigo
+								AND YEAR(fact_fecha) = (SELECT MAX(YEAR(fact_fecha)) FROM Factura)), 0)
+    FROM Empleado
+
+	select TOP 1 @mejorEmpleado = fact_vendedor from Factura
+							group by fact_vendedor
+							order by sum(fact_total) DESC
+	
+END
+GO
+
+BEGIN
+declare @mejorEmpleado Int
+exec dbo.Ej4Transact @mejorEmpleado output
+print(@mejorEmpleado)
+End
+
+/* 9. Crear el/los objetos de base de datos que ante alguna modificación de un ítem de
+factura de un artículo con composición realice el movimiento de sus
+correspondientes componentes. */
+
+select * from Item_Factura
+select * from Composicion
+
+create trigger ej9Transact on item_factura
+AFTER UPDATE
+as
+BEGIN
+	declare @cantidad numeric(6), @Producto numeric(6), @componente numeric(6)
+	SELECT @Producto = item_producto FROM inserted
+	Declare cursor_composicion CURSOR for 
+	Select comp_componente, (i.item_cantidad - d.item_cantidad), i.item_producto from Composicion
+	Join inserted i on comp_producto = i.item_producto join deleted d on comp_producto = d.item_producto 
+	open cursor_composicion
+	fetch next from cursor_composicion into @componente, @cantidad, @producto
+	while @@FETCH_STATUS = 0
+	BEGIN
+		update STOCK
+			set stoc_cantidad = stoc_cantidad - (@cantidad * (select comp_cantidad
+												From Composicion 
+												where comp_producto = @Producto))
+			where stoc_producto = @componente
+		fetch next from cursor_composicion 
+		into @componente, @cantidad, @producto
+	END
+	CLOSE cursor_composicion;
+    DEALLOCATE cursor_composicion;
+END
+
+
+/* 10. Crear el/los objetos de base de datos que ante el intento de borrar un artículo
+verifique que no exista stock y si es así lo borre en caso contrario que emita un
+mensaje de error.*/
+
+Create trigger ej10Transact on Producto
+Instead of Delete
+as
+begin
+	IF EXISTS (
+        SELECT 1
+        From Stock s
+		Join deleted d ON s.stoc_producto = d.prod_codigo
+        GROUP BY d.prod_codigo
+        HAVING SUM(s.stoc_cantidad) > 0
+    )
+	begin
+		raiserror('no se puede realizar la operacion')
+	end
+
+	delete from STOCK where stoc_producto IN (SELECT prod_codigo from deleted)
+	delete from Composicion where comp_producto IN (SELECT prod_codigo from deleted);
+	delete from Producto where prod_codigo IN (select prod_codigo from deleted)
+end
+
+/* Ej 7 Hacer un procedimiento que dadas dos fechas complete la tabla Ventas. Debe
+insertar una línea por cada artículo con los movimientos de stock generados por
+las ventas entre esas fechas. La tabla se encuentra creada y vacía.*/
+
+select * from item_factura
+Create procedure ej7Transact @fechaDesde DATETIME, @fechaHasta DATETIME
+AS
+BEGIN
+	 declare @renglon int, @producto char(8), @detalle char(50), @precio_prom numeric(12,4), @cantidad numeric(12,2), @ganancia numeric(12,2) 
+	 declare cursorItem Cursor for
+	 select @producto = prod_codigo, @detalle = prod_detalle, @cantidad = count(*), @precio_prom = avg(item_precio), @ganancia = sum(item_precio*item_cantidad)-sum(item_cantidad)*prod_precio
+	 from item_factura
+	 join Factura on item_tipo+item_sucursal+item_numero = fact_tipo+fact_sucursal+fact_numero
+	 join Producto on item_producto = prod_codigo
+	 where (fact_fecha > @fechaDesde and fact_fecha < @fechaHasta)
+	 group by prod_codigo, prod_detalle, prod_precio
+	 open cursorItem
+	 fetch next from cursorItem
+	 into @@producto, @detalle, @precio_prom, @cantidad, @ganancia
+	 select renglon = 1
+	 while @@FETCH_STATUS = 0
+	 BEGIN
+		insert ventas values (@producto, @detalle,  @cantidad, @precio_prom, @renglon, @ganancia)
+		select @renglon = @renglon + 1
+        fetch next into  @producto, @detalle,  @cantidad, @precio_prom, @ganancia
+	 END
+	 CLOSE cursorItem
+	DEALLOCATE cursorItem
+			
+END
+
+/* Mostrar para el o los artículos que tengan stock en todos los depósitos, nombre del
+artículo, stock del depósito que más stock tiene. */
+
+select * from stock
+
+Create procedure ejRandomTransact 
+AS
+BEGIN
+	declare @detalle char(50), @deposito char(6), @producto char(6)
+	create c1 Cursor for
+	select @detalle = prod_detalle, @deposito = (select	stoc_deposito
+												From STOCK
+												where stoc_producto = prod_codigo
+												order by stoc_cantidad)
+	From STOCK
+	join Producto on stoc_producto = prod_codigo
+	group by prod_detalle, prod_codigo
+	having count(stoc_deposito) = (select count(*) FROM DEPOSITO)
+	begin
+		print(@detalle)
+		print(@deposito)
+END
+
+/* 8. Realizar un procedimiento que complete la tabla Diferencias de precios, para los
+productos facturados que tengan composición y en los cuales el precio de
+facturación sea diferente al precio del cálculo de los precios unitarios por
+cantidad de sus componentes, se aclara que un producto que compone a otro,
+también puede estar compuesto por otros y así sucesivamente, la tabla se debe
+crear y está formada por las siguientes columnas: */
+
+select * from Composicion
+
+Create Procedure ej8Transact 
+AS 
+BEGIN
+	declare @codigo char(6), @detalle char(50), @cantidad Int, @precio_generado Int, @precio_facturado Int
+	declare c1 Cursor for 
+	select @codigo = prod_codigo, @detalle = prod_detalle, @precio_generado = (select sum(comp_cantidad * prod_precio)
+																				from Composicion
+																				join Producto p2 on prod_codigo = comp_componente
+																				where comp_producto = prod_codigo), @precio_facturado = prod_precio
+	From Composicion
+	join Producto on comp_producto = prod_codigo
+END
+
+/* 11. Cree el/los objetos de base de datos necesarios para que dado un código de
+empleado se retorne la cantidad de empleados que este tiene a su cargo (directa o
+indirectamente). Solo contar aquellos empleados (directos o indirectos) que
+tengan un código mayor que su jefe directo. */
+
+select * from Empleado
+
+create function ej11Transact (@empleadoJefe numeric(6))
+Returns Int
+As 
+BEGIN
+	declare @cantidadTotal Int, @empleado numeric(6)
+	select @cantidadTotal = 0
+	declare cursorEmpleados CURSOR FOR
+	select empl_codigo From Empleado
+	where empl_jefe = @empleadoJefe and (empl_codigo > @empleadoJefe)
+	group by empl_codigo
+	fetch cursorEmpleados into @empleado 
+    while @@FETCH_STATUS = 0
+	Begin
+		select @cantidadTotal = @cantidadTotal + 1 + dbo.ej11Transact(@empleado)
+		fetch cursorEmpleados into @empleado
+	End
+	close cursorEmpleados
+	deallocate cursorEmpleados
+	return @cantidadTotal
+END
+go
+
+/* 12 Cree el/los objetos de base de datos necesarios para que nunca un producto
+pueda ser compuesto por sí mismo. Se sabe que en la actualidad dicha regla se
+cumple y que la base de datos es accedida por n aplicaciones de diferentes tipos
+y tecnologías. No se conoce la cantidad de niveles de composición existentes.*/
+
+create Trigger ej12trigger on Composicion for insert
+as
+BEGIN
+	if exists (select * From inserted where dbo.ej12funcion(comp_producto) = 1)
+	ROLLBACK
+END
+
+Create procedure ej12funcion (@producto numeric(6))
+AS 
+RETURNS INT
+BEGIN
+	if exists(select c1.comp_producto From composicion c1
+		where c1.comp_producto = @producto and c1.comp_producto in (select c2.comp_componente FROM Composicion c2
+									where comp_producto = c1.comp_producto))
+	return 1
+
+	return 0
+END
+
+
+/* PRACTICA PARCIAL:
+
+1. Realizar una consulta SQL que retorne para el último año, los 5 vendedores con menos clientes asignados, 
+que más vendieron en pesos (si hay varios con menos clientes asignados debe traer el que más vendió), solo deben 
+considerarse las facturas que tengan más de dos ítems facturados:
+
+1)	Apellido y Nombre  del Vendedor.
+2)	Total de unidades de Producto Vendidas.
+3)	Monto promedio de venta por factura.
+4)	Monto total de ventas.
+
+El resultado deberá mostrar ordenado la cantidad de ventas descendente, en caso de igualdad de cantidades, 
+ordenar por código de vendedor.
+NOTA: No se permite el uso de sub-selects en el FROM. */
+
+Select top 5 empl_nombre, empl_apellido, sum(item_cantidad), avg(fact_total), sum(fact_total)
+from Empleado 
+join Factura f on f.fact_vendedor = empl_codigo
+join item_factura on item_tipo+item_sucursal+item_numero = f.fact_tipo+f.fact_sucursal+f.fact_numero 
+where year(f.fact_fecha) = (select max(year(fact_fecha)) From Factura)
+And ((select count(*) From Item_Factura where item_tipo+item_sucursal+item_numero = f.fact_tipo+f.fact_sucursal+f.fact_numero) > 2)
+group by empl_nombre, empl_apellido 
+order by count(distinct f.fact_cliente) ASC, sum(f.fact_total) Desc, count(f.fact_tipo+f.fact_sucursal+f.fact_numero) desc 
+
+/* CORRECCIONES:
+El Monto total de ventas es item_cantidad * item_precio, porque suma varias veces si pones sum(fact_total). Error de desaprobacion
+No hacer selects en el from (tipo un join tabla on item in select(...))
+El top 5 estaria mal, lo que hay que hacer es una subconsulta del top 5 ordenado por clientes y ventas y pedir en el where que el empleado
+se encuentre ahi
+El filtrado de las facturas lo podes hacer en el join tambien con un and, para no traer todas las facturas del cliente. Si lo haces en
+el where las traes todas y las filtras. Igual tecnicamente no habria mucha diferencia
+*/
+
+
+/* 2. Dado el contexto inflacionario se tiene que aplicar un control en el cual nunca se permita vender un producto a un 
+precio que no esté entre 0%-5% del precio de venta del producto el mes anterior, ni tampoco que esté en más de un 50% el 
+precio del mismo producto que hace 12 meses atrás. Aquellos productos nuevos, o que no tuvieron ventas en meses anteriores 
+no debe considerar esta regla ya que no hay precio de referencia. */
+
+Create trigger ejParcial2 on item_factura for Insert
+AS
+BEGIN
+	if exists (select count(*) from inserted i
+				join Factura f1 on i.item_tipo+i.item_sucursal+i.item_numero = fact_tipo+fact_sucursal+fact_numero
+				where i.item_precio < (select item_precio from Item_Factura 
+										join Factura f2 on i.item_tipo+i.item_sucursal+i.item_numero = f2.fact_tipo+f2.fact_sucursal+f2.fact_numero
+										where MONTH(fact_fecha) = Month(DATEADD(month, -1, f1.fact_fecha)) * 1.05) 
+				and i.item_precio < ((select item_precio from Item_Factura 
+										join Factura f3 on i.item_tipo+i.item_sucursal+i.item_numero = f3.fact_tipo+f3.fact_sucursal+f3.fact_numero
+										where year(f3.fact_fecha) = Year(DATEADD(year, -1, f1.fact_fecha))) * 1.50))
+	rollback 
+END
+go
+
+/*
+CORRECCIONES: 
+- El raiseerror te tira un rollback, es decir, corta la ejecucion.
+- No se pueden updatear ni borrar facturas o item_factura
+- Podias hacer una funcion que reciba la cantidad de meses para atras y calcule el precio. Solo le tenias que mandar 
+el mes y el producto
+- El cursor no deberia hacer falta con la funcion (de hecho mejor evitarlo), porque en el where los dos select son medio peruanos. Igual con la funcion podrias hacer
+el select y que cumpla ambas condiciones
+*/
+
+
+select * from factura
+select * from item_factura
+
+/* 1.	Mostrar dos filas con los 2  empleados del mes: Estos son:
+
+a)	El empleado que en el último año que haya ventas (en el cual se ejecuta la query) vendió 
+más en dinero (fact_total)
+b)	El segundo empleado del año, es aquel que en el mismo año (en el cual se ejecuta la query)
+ tiene más facturas emitidas
+
+Se deberá mostrar Apellido y nombre del empleado en una sola columna y para el primero
+ un string que diga 
+(Mejor Facturación y para el Segundo Vendió Más Facturas).
+
+No se permiten sub select en el FROM.*/
+
+Select top 1 (empl_nombre + ' ' + empl_apellido), 'MEJOR FACTURACION' CRITERIO
+from Empleado
+join Factura on fact_vendedor = empl_codigo and year(fact_fecha) = (select max(year(fact_fecha)) From factura)
+group by empl_nombre, empl_apellido
+order by sum(fact_total) desc
+UNION ALL
+Select top 1 (empl_nombre + '' + empl_apellido), 'VENDIO MAS FACTURAS' CRITERIO
+from Empleado
+join Factura on fact_vendedor = empl_codigo and year(fact_fecha) = (select max(year(fact_fecha)) From factura)
+group by empl_nombre, empl_apellido
+order by count(*) desc
+ 
+/* 
+- como son dos universos disyuntivos, no lo puedo resolver en el from
+- Aca el union no te lo toma porque no podes tener un order by en cada select, tenes que hacer un empl_codigo in (select top 1)
+*/
+
+/* 2.	Realizar un stored procedure que reciba un código de producto y una fecha y devuelva
+ la mayor cantidad de días 
+consecutivos a partir de esa fecha que el producto tuvo al menos la venta de una unidad en el día,
+ el sistema de ventas 
+on line está habilitado 24-7 por lo que se deben evaluar todos los días incluyendo domingos
+ y feriados */
+
+Create procedure ejParcialDias (@Producto numeric(6), @fechaInicio DateTime)
+AS
+BEGIN
+	declare @cantidadASuperar Int = 0
+	declare @cantidadActual Int = 0
+	declare @fechaActual dateTime
+	declare @fechaAnterior DateTime
+	declare c1 Cursor for 
+	select fact_fecha
+			From Item_Factura
+			Join Factura on item_tipo+item_sucursal+item_numero = fact_tipo+fact_sucursal+fact_numero
+			where (item_producto = @Producto) and fact_fecha > @fechaInicio
+			group by fact_fecha
+			order by fact_fecha ASC
+	fetch c1 into @fechaActual 
+    while @@FETCH_STATUS = 0
+	Begin
+		if (@fechaAnterior = DATEADD(DAY, -1, @fechaActual))
+			set @fechaAnterior = @fechaActual
+			set @cantidadActual = @cantidadActual + 1
+			fetch c1 into @fechaActual
+		else
+			if (@cantidadASuperar < @cantidadActual)
+				set @cantidadASuperar = @cantidadActual
+			set @fechaAnterior = @fechaActual
+	END
+	close c1
+	deallocate c1
+	Return @cantidadASuperar
+
+END
+go
