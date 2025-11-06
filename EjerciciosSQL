@@ -343,3 +343,62 @@ where fact_cliente in (select fact_cliente
 						having (count(distinct(month(fact_fecha))) = 12))
 group by clie_codigo, clie_razon_social, item_producto
 order by 4 desc
+
+/*
+29. Se solicita que realice una estadística de venta por producto para el año 2011, solo para
+los productos que pertenezcan a las familias que tengan más de 20 productos asignados
+a ellas, la cual deberá devolver las siguientes columnas:
+a. Código de producto
+b. Descripción del producto
+c. Cantidad vendida
+d. Cantidad de facturas en la que esta ese producto
+e. Monto total facturado de ese producto
+Solo se deberá mostrar un producto por fila en función a los considerandos establecidos
+antes. El resultado deberá ser ordenado por el la cantidad vendida de mayor a menor.
+*/
+
+select prod_codigo, prod_detalle, sum(item_cantidad), count(distinct(fact_tipo+fact_numero+fact_sucursal)), sum(item_cantidad * item_precio)
+from producto
+Join item_factura on item_producto = prod_codigo
+join Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+where prod_familia in (select top 20 p2.prod_familia
+						from Producto p2
+						group by p2.prod_familia
+						order by count(p2.prod_codigo) desc)
+and year(fact_fecha) = '2011'
+group by prod_codigo, prod_detalle
+order by 4
+
+/* Fijate que trajiste las 20 familias con mas productos asignados no los que tienen mas de veinte */
+
+/* 
+31. Escriba una consulta sql que retorne una estadística por Año y Vendedor que retorne las
+siguientes columnas:
+ Año.
+ Codigo de Vendedor
+ Detalle del Vendedor
+ Cantidad de facturas que realizó en ese año
+ Cantidad de clientes a los cuales les vendió en ese año.
+ Cantidad de productos facturados con composición en ese año
+ Cantidad de productos facturados sin composicion en ese año.
+ Monto total vendido por ese vendedor en ese año
+Los datos deberan ser ordenados por año y dentro del año por el vendedor que haya
+vendido mas productos diferentes de mayor a menor.
+*/
+
+select year(fact_fecha), empl_codigo, empl_comision, count(*) as cantidadFacturas , count(distinct(fact_cliente)) as CantidadClientes, sum(fact_total)
+(select count(distinct(item_producto))
+from item_factura join Factura f2 on item_tipo+item_numero+item_sucursal = f2.fact_tipo+f2.fact_numero+f2.fact_sucursal
+where year(f2.fact_fecha) = year(fact_fecha) and item_producto in (select comp_producto from Composicion)) as cantidadCompuestos, 
+(select count(distinct(item_producto))
+from item_factura join Factura f2 on item_tipo+item_numero+item_sucursal = f2.fact_tipo+f2.fact_numero+f2.fact_sucursal
+where year(f2.fact_fecha) = year(fact_fecha) and item_producto not in (select comp_producto from Composicion)) as cantidadNoCompuestos
+From Factura
+join Empleado on fact_vendedor = empl_codigo
+group by year(fact_fecha), empl_codigo, empl_comision
+order by 1 desc, (cantidadCompuestos + cantidadNoCompuestos)
+
+/* estaria bueno joinear con item_factura, para poder ponerlo en el order by (count(distinct item_producto))
+
+
+

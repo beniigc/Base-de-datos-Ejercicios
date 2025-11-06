@@ -395,3 +395,67 @@ BEGIN
 
 END
 go
+
+/* 15. Cree el/los objetos de base de datos necesarios para que el objeto principal
+reciba un producto como parametro y retorne el precio del mismo.
+Se debe prever que el precio de los productos compuestos sera la sumatoria de
+los componentes del mismo multiplicado por sus respectivas cantidades. No se
+conocen los nivles de anidamiento posibles de los productos. Se asegura que
+nunca un producto esta compuesto por si mismo a ningun nivel. El objeto
+principal debe poder ser utilizado como filtro en el where de una sentencia
+select.*/
+
+Create FUNCTION ej15Transact (@producto numeric(6))
+RETURNS Int
+AS
+BEGIN
+	declare @precio Int = 0
+	declare @componente numeric(6)
+	declare @precioComponente Int
+	if (@producto in (select comp_producto From Composicion))
+	begin
+		declare C1 cursor for select sum(comp_cantidad * prod_precio), comp_componente
+		From Composicion join Producto on prod_codigo = comp_componente
+		where comp_producto = @producto
+		fetch next from c1 into @precioComponente, @componente
+		while @@FETCH_STATUS = 0
+		BEGIN
+			if (@componente in (select comp_producto From Composicion))
+				set @precio = @precio + dbo.ej15Transact(@componente)
+			else
+				set @precio = @precio + @precioComponente
+			fetch next from c1 into @precioComponente, @componente
+		END
+		Close c1
+		deallocate c1
+		return @precio
+		end
+	 else 
+		return (select prod_precio From producto)
+END
+GO
+
+select * From Composicion
+
+/* 16. Desarrolle el/los elementos de base de datos necesarios para que ante una venta
+automaticamante se descuenten del stock los articulos vendidos. Se descontaran
+del deposito que mas producto poseea y se supone que el stock se almacena
+tanto de productos simples como compuestos (si se acaba el stock de los
+compuestos no se arman combos)
+En caso que no alcance el stock de un deposito se descontara del siguiente y asi
+hasta agotar los depositos posibles. En ultima instancia se dejara stock negativo
+en el ultimo deposito que se desconto. */
+
+create trigger ej16Transact on Item_Factura on insert
+As
+BEGIN
+	declare @deposito numeric(6)
+	declare @producto numeric(6)
+	set @producto = (select i.item_producto From inserted)
+	set @deposito = (select top 1 stoc_deposito From STOCK
+						stoc_producto = @producto
+						order by stoc_cantidad)
+	update Stock
+	set stoc_cantidad = stoc_cantidad - i.item_cantidad
+	where stoc_deposito = @deposito
+END
