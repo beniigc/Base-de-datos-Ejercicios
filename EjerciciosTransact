@@ -573,10 +573,48 @@ BEGIN
 								from inserted) 
 END
 
+/*
+28.Se requiere reasignar los vendedores a los clientes. Para ello se solicita que
+realice el o los objetos de base de datos necesarios para asignar a cada uno de los
+clientes el vendedor que le corresponda, 
+
+Entendiendo que el vendedor que le corresponde es aquel que le vendio mas facturas a ese cliente, 
+si en particular un cliente no tiene facturas compradas se le debera asignar el vendedor con mas
+venta de la empresa, o sea, el que en monto haya vendido mas.
+*/
+select * from cliente
+
+Create procedure ej28Transact 
+AS
+BEGIN
+	declare @vendedor char (8), @cliente char (8)
+	declare cursorCliente cursor for
+	select clie_codigo, isnull((select top 1 empl_codigo	
+						from Empleado
+						join Factura f2 on f2.fact_vendedor = empl_codigo
+						where f2.fact_cliente = clie_codigo
+						order by count(*) desc), (select top 1 f3.Fact_vendedor
+												from Factura f3
+												group by f3.fact_vendedor
+												order by sum(fact_total) desc))
+	From Cliente
+	left Join Factura on fact_cliente = clie_codigo
+	group by clie_codigo
+	open cursorCliente
+	fetch next from cursorCliente into @cliente, @vendedor
+	while @@FETCH_STATUS = 0
+	begin
+	update Cliente
+	set clie_vendedor = @vendedor
+	where clie_codigo = @cliente
+	end
+END
+GO
 
 
-
-
+select f3.Fact_vendedor, count(*)
+from Factura f3
+group by f3.fact_vendedor
 
 
 
