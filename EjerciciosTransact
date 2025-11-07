@@ -459,3 +459,124 @@ BEGIN
 	set stoc_cantidad = stoc_cantidad - i.item_cantidad
 	where stoc_deposito = @deposito
 END
+
+/*
+25. Desarrolle el/los elementos de base de datos necesarios para que no se permita
+que la composición de los productos sea recursiva, o sea, que si el producto A
+compone al producto B, dicho producto B no pueda ser compuesto por el
+producto A, hoy la regla se cumple.
+*/
+
+Create Trigger ej25Transact on Composicion for insert, update
+AS
+BEGIN
+	declare @componente numeric (6), @producto numeric (6)
+	declare c1 cursor for select comp_producto, comp_componente From inserted
+	open c1
+	fetch next into @producto, @componente
+	if (dbo.verificarComposicion(@componente, @producto) = 1)
+		rollback
+	else 
+		fetch next into @producto, @componente
+END
+
+Create Function verificarComposicion (@producto numeric(6), @compuesto numeric(6))
+Returns INT
+AS
+BEGIN
+	if exists (select comp_producto
+				From Composicion
+				where comp_producto = @producto and comp_componente = @compuesto)
+		return 1
+	Else
+		return 0
+END
+GO
+
+/* 17. Sabiendo que el punto de reposicion del stock es la menor cantidad de ese objeto
+que se debe almacenar en el deposito y que el stock maximo es la maxima
+cantidad de ese producto en ese deposito, cree el/los objetos de base de datos
+necesarios para que dicha regla de negocio se cumpla automaticamente. No se
+conoce la forma de acceso a los datos ni el procedimiento por el cual se
+incrementa o descuenta stock */
+
+Create trigger ej17Transact on Stock for update, insert
+AS
+BEGIN
+	declare @cantidad Int, @maximo char(8), @reposicion char(2)
+	declare c1 cursor for 
+	select stoc_cantidad, stoc_stock_maximo, stoc_punto_reposicion
+	from inserted
+	open c1 
+	fetch next into @cantidad, @maximo, @reposicion
+	while @@FETCH_STATUS = 0
+	BEGIN
+		if (@cantidad <  @reposicion) or (@cantidad > @maximo)
+			rollback
+	END
+END
+
+/* 18. Sabiendo que el limite de credito de un cliente es el monto maximo que se le
+puede facturar mensualmente, cree el/los objetos de base de datos necesarios
+para que dicha regla de negocio se cumpla automaticamente. No se conoce la
+forma de acceso a los datos ni el procedimiento por el cual se emiten las facturas */
+
+Create Trigger ej18Transact on factura for insert
+AS
+BEGIN
+	if exists (select count(*) 
+				From inserted
+				Join Cliente on inserted.fact_cliente = clie_codigo
+				where 
+				((select sum(f2.fact_total) + (select inserted.fact_total)
+					from factura f2
+					where f2.fact_cliente = clie_codigo and Month(f2.fact_fecha) = Month(fact_fecha)) --aca falto el anio tambien
+					+ inserted.fact_total) 
+					> clie_limite_credito)
+		begin
+		Rollback
+		end
+END
+
+/* 20. Crear el/los objeto/s necesarios para mantener actualizadas las comisiones del
+vendedor.
+El cálculo de la comisión está dado por el 5% de la venta total efectuada por ese
+vendedor en ese mes, más un 3% adicional en caso de que ese vendedor haya
+vendido por lo menos 50 productos distintos en el mes. */
+
+select * from empleado
+Create trigger ej20Transact on Factura for insert
+AS
+BEGIN
+	declare @comisionNueva Int
+	declare @ventaTotal Int
+	select @ventaTotal = sum(f.fact_total) + inserted.fact_total
+	From Factura f
+	Join Inserted on f.fact_vendedor = inserted.fact_vendedor
+	group by f.fact_vendedor
+	if exists (select count(*)
+				From Factura f2
+				join inserted on f2.fact_vendedor = inserted.fact_vendedor
+				join item_factura on item_tipo+item_numero+item_sucursal = f2.fact_tipo+f2.fact_numero+f2.fact_sucursal
+				group by f2.fact_vendedor, Month(f2.fact_fecha)
+				having count(distinct(item_producto)) > 50)
+		begin
+		update Empleado
+		set empl_comision = @ventaTotal * 0.05
+		where empl_codigo = (select inserted.fact_vendedor
+								from inserted) 
+		end
+	else
+		update Empleado
+		set empl_comision = @ventaTotal * 0.03
+		where empl_codigo = (select inserted.fact_vendedor
+								from inserted) 
+END
+
+
+
+
+
+
+
+

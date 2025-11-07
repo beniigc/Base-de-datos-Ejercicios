@@ -398,7 +398,50 @@ join Empleado on fact_vendedor = empl_codigo
 group by year(fact_fecha), empl_codigo, empl_comision
 order by 1 desc, (cantidadCompuestos + cantidadNoCompuestos)
 
-/* estaria bueno joinear con item_factura, para poder ponerlo en el order by (count(distinct item_producto))
+/* estaria bueno joinear con item_factura, para poder ponerlo en el order by (count(distinct item_producto)) */
 
+
+/* 34. Escriba una consulta sql que retorne para todos los rubros la cantidad de facturas mal
+facturadas por cada mes del año 2011 Se considera que una factura es incorrecta cuando
+en la misma factura se factutan productos de dos rubros diferentes. Si no hay facturas
+mal hechas se debe retornar 0. Las columnas que se deben mostrar son:
+1- Codigo de Rubro
+2- Mes
+3- Cantidad de facturas mal realizadas.
+*/
+
+select prod_rubro, month(fact_fecha), isnull(count(distinct fact_numero))
+From Factura
+join Item_Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+Join producto on item_producto = prod_codigo
+where year(fact_fecha) = '2011' and fact_tipo+fact_numero+fact_sucursal in 
+(select (f2.fact_tipo+f2.fact_numero+f2.fact_sucursal)
+From Factura f2
+join Item_Factura I2 on I2.item_tipo+I2.item_numero+I2.item_sucursal = f2.fact_tipo+f2.fact_numero+f2.fact_sucursal
+Join producto P2 on I2.item_producto = P2.prod_codigo
+group by f2.fact_tipo+f2.fact_numero+f2.fact_sucursal
+having (count (P2.prod_rubro) > 1))
+group by month(fact_fecha), prod_rubro
+
+select fact_tipo+fact_numero+fact_sucursal
+From Factura
+join Item_Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+Join producto on item_producto = prod_codigo
+group by fact_tipo+fact_numero+fact_sucursal
+having count (prod_rubro) > 1
+
+/*
+35. Se requiere realizar una estadística de ventas por año y producto, para ello se solicita
+que escriba una consulta sql que retorne las siguientes columnas:
+ Año
+ Codigo de producto
+ Detalle del producto
+ Cantidad de facturas emitidas a ese producto ese año
+ Cantidad de vendedores diferentes que compraron ese producto ese año.
+ Cantidad de productos a los cuales compone ese producto, si no compone a ninguno
+se debera retornar 0.
+ Porcentaje de la venta de ese producto respecto a la venta total de ese año.
+Los datos deberan ser ordenados por año y por producto con mayor cantidad vendida.
+*/
 
 
