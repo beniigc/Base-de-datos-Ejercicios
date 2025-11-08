@@ -431,17 +431,84 @@ group by fact_tipo+fact_numero+fact_sucursal
 having count (prod_rubro) > 1
 
 /*
-35. Se requiere realizar una estadística de ventas por año y producto, para ello se solicita
-que escriba una consulta sql que retorne las siguientes columnas:
- Año
- Codigo de producto
- Detalle del producto
- Cantidad de facturas emitidas a ese producto ese año
- Cantidad de vendedores diferentes que compraron ese producto ese año.
- Cantidad de productos a los cuales compone ese producto, si no compone a ninguno
-se debera retornar 0.
- Porcentaje de la venta de ese producto respecto a la venta total de ese año.
-Los datos deberan ser ordenados por año y por producto con mayor cantidad vendida.
+Realizar una consulta SQL que devuelva para los 5 productos mas vendidos y los 10 productos menos vendidos
+
+- Código y detalle del producto en una sola columna separado por el carácter “–” (ej: 0001 – DETALLE PRODUCTO)
+- Nombre del vendedor que más veces vendió el producto.
+- Cantidad de depósitos donde hay stock de ese producto.
+- Cliente que más veces compró ese producto.
+- Monto total facturado al cliente que más compró ese producto.
+
+El resultado deberá mostrarse ordenado de mayor a menor cantidad de ventas de los productos.
+
+NOTA: No se permite el uso de sub-selects en el FROM ni funciones definidas por el usuario para este punto.
 */
 
-
+--mas vendidos
+select CONCAT(prod_codigo +'-', prod_detalle), 
+(select top 1 fact_vendedor
+From item_factura i2
+join Factura f2 on i2.item_tipo+i2.item_numero+i2.item_sucursal = f2.fact_tipo+f2.fact_numero+f2.fact_sucursal
+where i2.item_producto = prod_codigo
+group by f2.fact_vendedor
+order by sum(i2.item_cantidad) desc), 
+(select count(distinct(stoc_deposito))
+from Stock
+where stoc_producto = prod_codigo),
+(select top 1 fact_cliente
+From Factura
+join Item_factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+where item_producto = prod_codigo
+group by fact_cliente
+order by sum(item_cantidad) desc),
+(select sum(fact_total)
+from factura
+where fact_cliente in (select top 1 fact_cliente
+						From Factura
+						join Item_factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+						where item_producto = prod_codigo
+						group by fact_cliente
+						order by sum(item_cantidad) desc))
+From Item_Factura
+join Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+join Producto on item_producto = prod_codigo
+where item_producto in (select top 5 item_producto	
+						from Item_Factura
+						join Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+						group by item_producto
+						order by count(distinct(fact_tipo+fact_numero+fact_sucursal)) desc)
+group by item_producto, prod_codigo, prod_detalle
+UNION 
+select CONCAT(prod_codigo +'-', prod_detalle), 
+(select top 1 fact_vendedor
+From item_factura i2
+join Factura f2 on i2.item_tipo+i2.item_numero+i2.item_sucursal = f2.fact_tipo+f2.fact_numero+f2.fact_sucursal
+where i2.item_producto = prod_codigo
+group by f2.fact_vendedor
+order by sum(i2.item_cantidad) desc), 
+(select count(distinct(stoc_deposito))
+from Stock
+where stoc_producto = prod_codigo),
+(select top 1 fact_cliente
+From Factura
+join Item_factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+where item_producto = prod_codigo
+group by fact_cliente
+order by sum(item_cantidad) desc),
+(select sum(fact_total)
+from factura
+where fact_cliente in (select top 1 fact_cliente
+						From Factura
+						join Item_factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+						where item_producto = prod_codigo
+						group by fact_cliente
+						order by sum(item_cantidad) desc))
+From Item_Factura
+join Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+join Producto on item_producto = prod_codigo
+where item_producto in (select top 10 item_producto	
+						from Item_Factura
+						join Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+						group by item_producto
+						order by count(distinct(fact_tipo+fact_numero+fact_sucursal)) asc)
+group by item_producto, prod_codigo, prod_detalle

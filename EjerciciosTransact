@@ -574,9 +574,160 @@ BEGIN
 END
 
 
+/*
+Realizar el/los objetos de base de datos necesarios para que ante cada operación que se realice sobre la tabla STOCK, se grabe un registro 
+en la tabla de auditoría AUD_STOCK con todas las columnas según se define a continuación. La tabla debe crearse y tendrá la siguiente estructura:
+CREATE TABLE AUD_STOCK (
+    auds_renglon bigint,
+    auds_operacion char(3),
+    auds_fecha_hora smalldatetime,
+    auds_cantidad decimal(12,2),
+    auds_punto_reposicion decimal(12,2),
+    auds_stock_maximo decimal(12,2),
+    auds_detalle char(100),
+    auds_proxima_reposicion smalldatetime,
+    auds_producto char(8),
+    auds_deposito char(2)
+);
+Además de las columnas de la tabla STOCK, deberá grabarse lo siguiente:
+
+- auds_renglon: Número consecutivo para cada registro que se grabe en AUD_STOCK.
+- auds_operacion: Si se insertó un registro en STOCK, debe grabar "INS". Si se borró, "DEL", y si se actualizó algún campo, deberá 
+grabar "UP1" y los valores anteriores, y en otro registro "UP2" con los valores nuevos en el resto de los campos.
+- auds_fecha_hora: Fecha y hora de la operación.
+*/
+
+create trigger ejParcialTransact on Stock for insert,update
+AS
+BEGIN
+	set @renglon = 0
+	declare @stock_maximo decimal(12,2), @cantidad decimal(12,2), @fecha_hora smalldatetime, @punto_reposicion decimal(12,2), @detalle char(100),
+	@proxima_reposicion smalldatetime, @producto char(8), @deposito char(2), @renglon BIGINT
+	if exists (select count(*) from deleted) -- inserto
+	Begin
+		declare c1 cursor for 
+		select @stock_maximo = i.stoc_stock_maximo, @cantidad = i.stoc_cantidad, @fecha_hora = TODATETIMEOFFSET, @punto_reposicion = i.stoc_punto_reposicion
+		, @detalle = prod_detalle, @producto = prod_codigo, @deposito = i.stoc_deposito, @proxima_reposicion = i.stoc_proxima_reposicion
+		From inserted
+		join producto on stoc_producto = prod_codigo
+		open c1 fetch next into @stock_maximo, @cantidad, @fecha_hora, @punto_reposicion
+		, @detalle, @producto, @deposito, @proxima_reposicion
+		Begin
+		insert into dbo.AUD_STOCK values(
+		(@renglon +1),
+		'INS',
+		@fecha_hora,
+		@cantidad,
+		@punto_reposicion,
+		@stock_maximo,
+		@detalle,
+		@proxima_reposicion,
+		@producto,
+		@detalle
+		)
+		fetch next from c1 into @stock_maximo, @cantidad, @fecha_hora, @punto_reposicion 
+		End
+		close c1
+		deallocate c1
+	end
+
+	else -- updateo o deleteo
+		if exists (select * from inserted) -- updateo
+		Begin
+		declare c1 cursor for 
+		select @stock_maximo = i.stoc_stock_maximo, @cantidad = i.stoc_cantidad, @fecha_hora = TODATETIMEOFFSET, @punto_reposicion = i.stoc_punto_reposicion
+		, @detalle = prod_detalle, @producto = prod_codigo, @deposito = i.stoc_deposito, @proxima_reposicion = i.stoc_proxima_reposicion
+		From inserted
+		join producto on stoc_producto = prod_codigo
+		open c1 fetch next into @stock_maximo, @cantidad, @fecha_hora, @punto_reposicion
+		, @detalle, @producto, @deposito, @proxima_reposicion
+		Begin
+		insert into dbo.AUD_STOCK values(
+		(@renglon +1),
+		'UP2',
+		@fecha_hora,
+		@cantidad,
+		@punto_reposicion,
+		@stock_maximo,
+		@detalle,
+		@proxima_reposicion,
+		@producto,
+		@detalle
+		)
+		fetch next from c1 into @stock_maximo, @cantidad, @fecha_hora, @punto_reposicion 
+		end
+		close c1
+		deallocate c1
+		set @renglon = 0
+		declare c2 cursor for 
+		select @stock_maximo = i.stoc_stock_maximo, @cantidad = i.stoc_cantidad, @fecha_hora = TODATETIMEOFFSET, @punto_reposicion = i.stoc_punto_reposicion
+		, @detalle = prod_detalle, @producto = prod_codigo, @deposito = i.stoc_deposito, @proxima_reposicion = i.stoc_proxima_reposicion
+		From deleted
+		join producto on stoc_producto = prod_codigo
+		open c2 
+		fetch next from c2 into @stock_maximo, @cantidad, @fecha_hora, @punto_reposicion
+		, @detalle, @producto, @deposito, @proxima_reposicion
+		Begin
+		insert into dbo.AUD_STOCK values(
+		(@renglon + 1),
+		'UP2',
+		@fecha_hora,
+		@cantidad,
+		@punto_reposicion,
+		@stock_maximo,
+		@detalle,
+		@proxima_reposicion,
+		@producto,
+		@detalle
+		)
+		fetch next from c2 into @stock_maximo, @cantidad, @fecha_hora, @punto_reposicion 
+		end
+		close c2
+		deallocate c2
+		End
+		else -- deleteo
+			Begin
+				declare c1 cursor for 
+				select @stock_maximo = d.stoc_stock_maximo, @cantidad = d.stoc_cantidad, @fecha_hora = TODATETIMEOFFSET, @punto_reposicion = d.stoc_punto_reposicion
+				, @detalle = prod_detalle, @producto = prod_codigo, @deposito = d.stoc_deposito, @proxima_reposicion = d.stoc_proxima_reposicion
+				From deleted
+				join producto on stoc_producto = prod_codigo
+				open c1 fetch next into @stock_maximo, @cantidad, @fecha_hora, @punto_reposicion
+				, @detalle, @producto, @deposito, @proxima_reposicion
+				Begin
+				insert into dbo.AUD_STOCK values(
+				(@renglon +1),
+				'DEL',
+				@fecha_hora,
+				@cantidad,
+				@punto_reposicion,
+				@stock_maximo,
+				@detalle,
+				@proxima_reposicion,
+				@producto,
+				@detalle
+				)
+				fetch next from c1 into @stock_maximo, @cantidad, @fecha_hora, @punto_reposicion 
+				End
+				close c1
+				deallocate c1
+			end
+
+END
 
 
 
+CREATE TABLE AUD_STOCK (
+    auds_renglon bigint,
+    auds_operacion char(3),
+    auds_fecha_hora smalldatetime,
+    auds_cantidad decimal(12,2),
+    auds_punto_reposicion decimal(12,2),
+    auds_stock_maximo decimal(12,2),
+    auds_detalle char(100),
+    auds_proxima_reposicion smalldatetime,
+    auds_producto char(8),
+    auds_deposito char(2))
 
 
 
