@@ -512,3 +512,109 @@ where item_producto in (select top 10 item_producto
 						group by item_producto
 						order by count(distinct(fact_tipo+fact_numero+fact_sucursal)) asc)
 group by item_producto, prod_codigo, prod_detalle
+
+
+/* 1. Realizar una consulta que muestre, para los clientes que compraron 
+únicamente en años pares, la siguiente información: 
+    - El numero de fila
+    - el codigo de cliente
+    - el nombre del producto más comprado por el cliente
+    - la cantidad total comprada por el cliente en el último año
+
+El resultado debe estar ordenado en función de la cantidad máxima comprada por cliente
+de mayor a menor    
+*/ 
+
+select f1.fact_cliente, 
+(select top 1 prod_detalle
+from Factura 
+Join item_factura  on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+Join Producto on item_producto = prod_codigo
+where fact_cliente = f1.fact_cliente
+group by prod_detalle
+order by sum(item_cantidad) desc),
+(select sum(item_cantidad)
+from Factura 
+Join item_factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+where f1.fact_cliente = fact_cliente and
+year(fact_fecha) = (SELECT MAX(year(fact_fecha)) FROM Factura))
+From Factura f1
+Join Item_Factura on item_tipo+item_numero+item_sucursal = f1.fact_tipo+f1.fact_numero+f1.fact_sucursal
+where (year(f1.fact_fecha) % 2 = 0)
+group by f1.fact_cliente
+order by sum(item_cantidad) desc
+
+
+/*
+Armar una consulta que muestre para todos los productos:
+
+- Producto
+- Detalle del producto
+- Detalle composiciOn (si no es compuesto un string SIN COMPOSICION, si es compuesto un string CON COMPOSICION
+- Cantidad de Componentes (si no es compuesto, tiene que mostrar 0)
+- Cantidad de veces que fue comprado por distintos clientes
+
+Nota: No se permiten sub select en el FROM.
+*/
+
+Select prod_codigo, prod_detalle, 
+Case
+when exists (select comp_componente
+			from Composicion
+			where comp_producto = prod_codigo)
+then 'CON COMPOSICION'
+else 'SIN COMPOSICION'
+end as detalleComposicion, 
+(select isnull(count(comp_componente), 0)
+from composicion
+where comp_producto = p.prod_codigo),
+(select count(distinct(fact_cliente))
+From Factura
+Join Item_Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+where item_producto = p.prod_codigo)
+From Producto p
+left join Composicion on comp_producto = p.prod_codigo
+
+select * from composicion
+
+
+
+/* 1. Realizar una consulta SQL que muestre la siguiente informacion para los clientes que hayan
+comprado productos en mas de tres rubros diferentes en 2012 y que no compro en años impares   
+    - El numero de fila
+    - El codigo del cliente 
+    - el nombre del cliente
+    - la cantidad total comprada por el cliente
+    - la categoria en la que más compro en 2012
+El resultado debe estar ordenado por la cantidad total comprada de mayor a menor 
+*/ 
+
+Select clie_codigo, clie_razon_social, 
+(select sum(item_cantidad)
+From Factura
+join Item_Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+where fact_cliente = clie_codigo
+),
+(select top 1 prod_familia
+from Factura
+join Item_Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+join Producto on Prod_codigo = item_producto
+where fact_cliente = clie_codigo
+and year(fact_fecha) = 2012
+group by prod_familia
+order by count(*))
+From Factura f1
+join Item_Factura on item_tipo+item_numero+item_sucursal = f1.fact_tipo+f1.fact_numero+f1.fact_sucursal
+join Producto on prod_codigo = item_producto
+join Cliente on fact_cliente = clie_codigo
+where year(f1.fact_fecha) = 2012 and 
+not exists (select count(*)
+			From Factura
+			where year(fact_fecha) % 2 <> 0
+			and fact_cliente = f1.fact_cliente)
+group by clie_razon_social, clie_codigo
+having count(distinct(prod_rubro)) > 2
+
+
+
+select * from CLiente

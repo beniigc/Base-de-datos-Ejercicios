@@ -773,3 +773,68 @@ CREATE TABLE AUD_STOCK (
 
 
 
+/*Implementar el/los objetos necesarios para implementar la siguiente restriccion en linea:
+Cuando se inserta en una venta un COMBO, nunca se debera guardar el producto COMBO, sino, la descomposicion de sus componentes.
+
+Nota: Se sabe que actualmente todos los articulos guardados de ventas estan descompuestos en sus componentes.*/
+
+Create trigger EjComboTransact on Item_factura for Insert
+AS
+BEGIN
+	declare @cantidadComponente char(8), @componente char(8), @precio Int
+	Declare c1 CURSOR for 
+	(select comp_cantidad, comp_componente, (select (comp_cantidad * prod_precio)
+													From Producto 
+													where prod_codigo = comp_componente)
+	from inserted
+	Join Composicion on item_producto = comp_producto)
+	open c1
+	fetch next from c1 into @cantidadComponente, @componente, @precio
+	while @@FETCH_STATUS = 0
+	Begin
+		insert into Item_Factura values(
+		(select item_tipo, item_sucursal, item_numero
+		from inserted), @componente, @cantidadComponente, @precio)
+		fetch next from c1 into @cantidadComponente, @componente, @precio
+	end
+	close c1
+	deallocate c1
+END
+Go
+-- MAL: Habia que hacer dos cursores
+select * from Item_Factura
+select * from Composicion
+
+/* 2. Implementar los objetos necesarios para registrar, en tiempo real, los 10 productos
+mas vendidos por anio en una tabla especifica. Esta tabla debe contener exclusivamente la info requerida
+sin incluir filas adicionales. 
+
+Los mas vendidos se define como aquellos productos con el mayor numero de unidades vendidas.
+*/
+
+Create procedure EjParcialMasVendidos 
+AS
+BEGIN
+	declare @anio Int
+	declare cursorAnios cursor for
+	(select year(fact_fecha)
+		From Factura
+		group by year(fact_fecha))
+	open cursorAnios
+	fetch next from cursorAnios into @anio
+	while @@FETCH_STATUS = 0
+	Begin
+		insert into Mas_Vendidos 
+		(select top 10 year(fact_fecha), item_producto
+		from Factura
+		join Item_Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+		where year(fact_fecha) = @anio
+		group by item_producto, year(fact_fecha)
+		order by sum(item_cantidad) desc)
+		fetch next from cursorAnios into @anio
+	END
+	close cursorAnios
+	deallocate cursorAnios
+END
+
+CREATE TABLE Mas_Vendidos (vend_anio int, vend_producto int, Primary key (vend_anio, vend_producto))
