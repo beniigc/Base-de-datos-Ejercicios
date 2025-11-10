@@ -616,5 +616,84 @@ group by clie_razon_social, clie_codigo
 having count(distinct(prod_rubro)) > 2
 
 
+/* 
+1. Consulta SQL para analizar clientes con patrones de compra especificos
 
-select * from CLiente
+Se debe identificar clientes que realizarion una compra inicial y luego volvieron a 
+comprar despues de 5 meses o mas 
+
+La consulta debe mostrar 
+    - El numero de fila: identificador secuencial del resultado
+    - el codigo del cliente id unico del cliente
+    - el nombre del cliente: nombre asociado al cliente 
+    - cantidad total comprada: total de productos distintos adquiridos por el cliente
+    - total facturado: importe total factura al cliente 
+El resultado debe estsr ordenado de forma descendente por la cantidad de productos 
+adquiridos por cada cliente
+*/ 
+
+Select clie_codigo, clie_razon_social, sum(item_cantidad), sum(item_cantidad * item_precio)
+From factura f
+Join Cliente on clie_codigo = fact_cliente
+join item_factura on item_tipo+item_numero+item_sucursal = f.fact_tipo+f.fact_numero+f.fact_sucursal
+where exists ( select count(*)
+				from Factura f1
+				where f1.fact_cliente = clie_codigo
+				and f1.fact_tipo+f1.fact_numero+f1.fact_sucursal <> f.fact_tipo+f.fact_numero+f.fact_sucursal
+				and DATEDIFF(Month, f1.fact_fecha, f.fact_fecha) > 4)
+and not exists ( select count(*)
+				from Factura f2
+				where f2.fact_cliente = clie_codigo
+				and f2.fact_tipo+f2.fact_numero+f2.fact_sucursal <> f.fact_tipo+f.fact_numero+f.fact_sucursal
+				and DATEDIFF(Month, f2.fact_fecha, f.fact_fecha) < 4)
+group by clie_codigo, clie_razon_social
+order by 3 desc
+
+
+
+/* Se requiere armar una estadística que retorne para cada año y familia el cliente que menos
+ productos diferentes compro y que más monto compro para ese año y familia
+
+Año, Razón Social Cliente, Familia, Cantidad de unidades compradas de esa familia
+
+Los resultados deben ser ordenados por año de menor a mayor y para cada año ordenados por la familia que menos productos 
+tenga asignados
+NOTA: No se permite el uso de sub-selects en el FROM.*/
+
+
+Select * from Producto
+
+Select year(fact_fecha), clie_razon_social, prod_familia, sum(item_cantidad)
+From Cliente
+Join Factura f on f.fact_cliente = clie_codigo
+Join item_factura on item_tipo+item_numero+item_sucursal = f.fact_tipo+f.fact_numero+f.fact_sucursal
+join Producto on item_producto = prod_codigo
+where clie_codigo in (select top 1 clie_codigo
+						from Cliente
+						Join Factura on clie_codigo = fact_cliente
+						join item_factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+						where year(fact_fecha) = year(f.fact_fecha)
+						group by clie_codigo
+						order by count(distinct(item_producto)) asc, sum(item_cantidad * item_precio) desc)
+group by year(f.fact_fecha), clie_razon_social, prod_familia
+order by year(f.fact_fecha) asc, 4
+
+-- VERSION CORREGIDA
+
+SELECT year(f.fact_fecha), p.prod_familia, fact_cliente, SUM(item_cantidad) 'Cantidad de unidades vendidas'
+FROM Factura f
+JOIN Item_Factura ON f.fact_tipo+f.fact_numero+f.fact_sucursal = item_tipo+item_numero+item_sucursal
+JOIN Producto p ON item_producto = p.prod_codigo
+where fact_cliente = (SELECT TOP 1 FACT_CLIENTE 
+    FROM Factura 
+    JOIN Item_Factura ON fact_tipo+fact_numero+fact_sucursal = item_tipo+item_numero+item_sucursal
+    JOIN Producto p1 ON item_producto = p1.prod_codigo
+    JOIN Cliente ON fact_cliente = clie_codigo
+    WHERE year(fact_fecha) = year(f.fact_fecha) AND p1.prod_familia = p.prod_familia
+    GROUP BY fact_cliente, clie_razon_social
+    ORDER BY COUNT(DISTINCT P1.PROD_CODIGO), SUM(item_cantidad * item_precio) desc)
+GROUP BY year(f.fact_fecha), p.prod_familia, FACT_CLIENTE
+ORDER BY year(f.fact_fecha) asc, (select COUNT(distinct prod_codigo) from producto where prod_familia = p.prod_familia) asc
+go 
+
+

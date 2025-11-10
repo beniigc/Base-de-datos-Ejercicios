@@ -838,3 +838,105 @@ BEGIN
 END
 
 CREATE TABLE Mas_Vendidos (vend_anio int, vend_producto int, Primary key (vend_anio, vend_producto))
+
+/* 2. Se detectó un error en el proceso de registro de ventas, donde se almacenaron productos compuestos
+en lugar de sus componentes individuales. Para solucionar este problema, se debe:
+
+    1. Diseñar e implmenetar los objetos necesarios para reoganizar las ventas tal como están registradas actualmente 
+    2. Desagregar los productos compuestos vendidos en sus componenetes individuales, asegurando
+    que cada venta refleje correctamente los elementos que la compronen
+    3. Garantizar que la base de datos quede consistente y alineada con las especificaciones requeridas para el manejo de poductos
+*/
+
+Create procedure ejSacarCompuestos 
+AS
+BEGIN
+	Create c1 cursor for 
+	Declare @tipo char(1), @sucursal char(4), @numero INt, @producto char(8), @cantidad Int, @precio Int, @componente char(6), @cantidadComponente INT, @precioComponente Int
+	select item_tipo, item_sucursal, item_numero, item_producto, item_cantidad, item_precio
+	from item_factura
+	join Composicion on comp_producto = item_producto
+	fetch next from c1 into @tipo, @sucursal, @numero, @producto, @cantidad, @precio
+	while @@FETCH_STATUS = 0
+	Begin
+		declare cursorComponentes cursor for 
+		select comp_componente, comp_cantidad, (comp_cantidad * Prod_precio)
+		from Composicion
+		Join Producto on comp_componente = prod_codigo
+		where comp_producto = @producto
+		fetch next from cursorComponentes into @componente, @cantidadComponente, @precioComponente
+		while @@FETCH_STATUS = 0
+		Begin
+			insert into dbo.Item_Factura values (@tipo, @sucursal, @numero, @componente, @cantidadComponente * @cantidad, @cantidad * @cantidadComponente * @precioComponente)
+			fetch next from cursorComponentes into @componente, @cantidadComponente, @precioComponente
+		End
+		close cursorComponentes
+		deallocate cursorComponentes
+		delete from Item_Factura where (item_numero = @numero, item_producto = @producto, item_sucursal = @sucursal, item_tipo = @tipo)
+		fetch next from c1 into @tipo, @sucursal, @numero, @producto, @cantidad, @precio
+	END
+	close c1
+	deallocate c1
+
+
+END
+
+select * from item_factura
+
+/* 2. Realizar un stored procedure que calcule e informe la comisión de un vendedor para un determinado mes.
+Los parámetros de entrada es código de vendedor, mes y año.  
+El criterio para calcular la comisión es: 5% del total vendido tomando como importe base el valor de la factura 
+sin los impuestos del mes a comisionar, a esto se le debe sumar un plus de 3% más en el caso de que sea el vendedor 
+que más vendió los productos nuevos en comparación al resto de los vendedores, es decir este plus se le aplica solo 
+un vendedor y en caso de igualdad se le otorga al que posea el código de vendedor más alto. 
+Se considera que un producto es nuevo cuando su primera venta en la empresa se produjo durante el mes en curso 
+o en alguno de los 4 meses anteriores.
+De no haber ventas de productos nuevos en ese periodo, ese plus nunca se aplica. */
+
+Create procedure EjParcialComision (@vendedor char(8), @mes int, @anio int)
+AS
+BEGIN
+	declare @comision Int
+	set @comision = 0.05 * (select sum(fact_total - fact_total_impuestos)
+							from Factura 
+							where year(fact_fecha) = @anio and month(fact_fecha) = @mes
+							and fact_vendedor = @vendedor)
+	if @vendedor in (select fact_cliente
+					from Factura 
+					Join Item_Factura on item_tipo+item_numero+item_sucursal = fact_tipo+fact_numero+fact_sucursal
+					where dbo.esProductoNuevo(item_producto, @mes, @anio) = 1
+					order by sum(item_cantidad), fact_cliente desc)
+	Begin
+		set @comision = @comision + 0.03 * (select sum(fact_total - fact_total_impuestos)
+											from Factura 
+											where year(fact_fecha) = @anio and month(fact_fecha) = @mes
+											and fact_vendedor = @vendedor)
+	END
+	print 'la comision del vendedor es:' + @comision
+END
+
+select * from Empleado
+select * from Factura
+create Function esProductoNuevo(@producto char(8), @mes Int, @anio Int)
+RETURNs int
+AS
+BEGIN
+	if (@mes - (select top 1 fact_fecha
+				from Factura
+				Join Item_Factura on fact_tipo+fact_numero+fact_sucursal = item_tipo+item_numero+item_sucursal
+				where item_producto = @producto
+				order by month(fact_fecha) asc)) < 4
+				and
+				year((select top 1 fact_fecha
+				from Factura
+				Join Item_Factura on fact_tipo+fact_numero+fact_sucursal = item_tipo+item_numero+item_sucursal
+				where item_producto = @producto
+				order by month(fact_fecha) asc)) = @anio
+	begin 
+	return 1
+	End
+	else 
+	return 0	
+END	
+
+
